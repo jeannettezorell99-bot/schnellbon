@@ -191,6 +191,7 @@ button.ovrow{font:inherit;color:inherit;background:none;border:0;border-top:1px 
       <div class="stat neu"><b id="sumNeu">0,00 €</b><span id="lblNeu">Noch nicht übernommen</span></div>
     </div>
     <div class="lab" id="hlist">Einträge</div>
+    <div class="empty" id="listNote"></div>
     <div id="list"></div>
   </section>
 
@@ -494,8 +495,8 @@ var SBParser=(function(){
       }
     });
   }
-  $("ovPrev").onclick=function(){viewYm=ymShift(viewYm,-1);renderOv()};
-  $("ovNext").onclick=function(){if(viewYm<today().slice(0,7)){viewYm=ymShift(viewYm,1);renderOv()}};
+  $("ovPrev").onclick=function(){viewYm=ymShift(viewYm,-1);render()};
+  $("ovNext").onclick=function(){if(viewYm<today().slice(0,7)){viewYm=ymShift(viewYm,1);render()}};
 
   /* ---------- Einträge ---------- */
   function render(){
@@ -507,7 +508,8 @@ var SBParser=(function(){
     $("copy").disabled=nNeu===0; $("copyP").disabled=summenP()===null; $("csv").disabled=nNeu===0; $("mark").disabled=nNeu===0;
     buildOrte(); renderOv();
     var items=[],bons={};
-    es.forEach(function(e){
+    $("listNote").textContent="Bons und Einträge im "+$("ovMonth").textContent+" · anderen Monat mit den Pfeilen in der Monatsübersicht wählen";
+    es.filter(function(e){return e.datum.slice(0,7)===viewYm}).forEach(function(e){
       if(e.pos){
         var b=bons[e.bonNr];
         if(!b){b=bons[e.bonNr]={bon:true,bonNr:e.bonNr,ort:e.ort,datum:e.datum,erfasst:e.erfasst||"",ps:[],sum:0,done:true};items.push(b)}
@@ -517,9 +519,9 @@ var SBParser=(function(){
     items.sort(function(a,b){return a.datum===b.datum?b.erfasst.localeCompare(a.erfasst):b.datum.localeCompare(a.datum)});
     var box=$("list"); box.innerHTML="";
     if(!items.length){
-      var p=document.createElement("div");p.className="empty";p.textContent="Noch keine Einträge. Bon einlesen oder Betrag, Kategorie und Ort eingeben und auf Eintragen tippen.";
+      var p=document.createElement("div");p.className="empty";p.textContent=es.length?"In diesem Monat gibt es keine Einträge.":"Noch keine Einträge. Bon einlesen oder Betrag, Kategorie und Ort eingeben und auf Eintragen tippen.";
       var ex=document.createElement("div");ex.className="ex";ex.textContent="Beispiel (nicht gespeichert): 3,80 € · Außer Haus · Eisdiele am See · Eis";
-      box.appendChild(p);box.appendChild(ex);return;
+      box.appendChild(p);if(!es.length)box.appendChild(ex);return;
     }
     var lastDay=null,ul=null;
     items.forEach(function(it){
