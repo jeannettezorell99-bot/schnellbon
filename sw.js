@@ -1,4 +1,4 @@
-var CACHE = "schnellbon-v3";
+var CACHE = "schnellbon-v4";
 var FILES = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", function (ev) {

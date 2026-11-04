@@ -111,10 +111,11 @@ button.ovrow{font:inherit;color:inherit;background:none;border:0;border-top:1px 
 
   <section class="card" aria-labelledby="hscan">
     <div class="lab" id="hscan">Bon einlesen</div>
-    <div class="small-note">Am genauesten ist ein eBon als PDF, Screenshot oder kopierter Text. Papierbon: gerade und gut beleuchtet fotografieren.</div>
-    <button class="btn" id="bFoto" type="button">Bon fotografieren</button>
-    <button class="btn ghost" id="bDatei" type="button">Datei wählen (PDF, Bild, Text)</button>
+    <div class="small-note">eBon (PDF, Screenshot oder kopierter Text) wird am genauesten gelesen. Für Papierbons: Vorlage kopieren, in deiner KI-App einfügen und das Foto des Bons dazugeben, die Antwort dann unter „Bon-Text einfügen“ einfügen.</div>
+    <button class="btn" id="bDatei" type="button">eBon wählen (PDF, Bild, Text)</button>
+    <button class="btn ghost" id="bKi" type="button">Papierbon: Vorlage für KI kopieren</button>
     <button class="btn ghost" id="bText" type="button" aria-expanded="false" aria-controls="textWrap">Bon-Text einfügen</button>
+    <button class="btn ghost" id="bFoto" type="button">Bon fotografieren (Texterkennung, ungenau)</button>
     <div id="textWrap" hidden>
       <div class="field">
         <label for="bonText">Text des Bons</label>
@@ -248,7 +249,40 @@ var SBParser=(function(){
   var RE_ITEM=/^(.+?)\s+(-?\d{1,4},\d{2})\s*[AB]?\s*\*?$/;
   var RE_END=/^\s*(zu zahlen|summe\b|gesamtbetrag|total\b)/i;
 
+  // Antwort einer KI im Format "Bon-Nr.;Datum;Geschäft;Artikel;Betrag" plus Zeile "Summe laut Bon: ..."
+  function parseKi(text,regeln){
+    var lines=String(text).replace(/\r/g,"").split("\n").map(function(x){return x.trim()}).filter(function(x){return x&&x.indexOf("```")!==0});
+    var rows=[],summeBon=null;
+    lines.forEach(function(l){
+      var m=l.match(/^Summe laut (?:Bon|Rechnung|Kassenbon)\s*:?\s*(-?\d{1,5}[.,]\d{2})/i);
+      if(m){summeBon=toNum(m[1]);return}
+      var c=l.split(";");
+      if(c.length>=5&&/^\d{2}\.\d{2}\.\d{4}$/.test(c[1].trim())){
+        var b=c[c.length-1].trim().replace(/\s|€|EUR/g,"");
+        if(/^-?\d+([.,]\d{1,2})?$/.test(b))rows.push({datum:c[1].trim(),markt:c[2].trim(),name:c.slice(3,c.length-1).join(" ").trim(),betrag:toNum(b)});
+      }
+    });
+    if(!rows.length)return null;
+    var pos=[],warn=[];
+    rows.forEach(function(r){
+      var last=pos[pos.length-1];
+      if(r.betrag<0&&/rabatt|gutschein|coupon|preisvorteil|nachlass/i.test(r.name)&&last){last.rabatt=r2(last.rabatt+r.betrag);return}
+      pos.push({name:r.name,menge:1,einheit:"Stk",einzel:r.betrag,brutto:r.betrag,rabatt:0});
+    });
+    var markt=rows[0].markt||null,dm=rows[0].datum.split("."),datum=dm[2]+"-"+dm[1]+"-"+dm[0];
+    pos.forEach(function(q){
+      q.netto=r2(q.brutto+q.rabatt);
+      var c=classify(q.name,markt,regeln);q.gruppe=c.gruppe;q.sicher=c.sicher;q.gelernt=!!c.gelernt;
+    });
+    var sum=r2(pos.reduce(function(a,q){return a+q.netto},0));
+    if(summeBon===null)warn.push("Die Zeile „Summe laut Bon“ fehlt in der Antwort, deshalb kann die Summe nicht geprüft werden.");
+    else if(Math.abs(summeBon-sum)>0.004)warn.push("Die erkannten Positionen ergeben "+sum.toFixed(2).replace(".",",")+" €, der Bon sagt "+summeBon.toFixed(2).replace(".",",")+" €. Bitte Beträge und fehlende Zeilen prüfen.");
+    if(/\[unleserlich\]/i.test(text))warn.push("Mindestens eine Zeile war unleserlich. Bitte Name und Betrag ergänzen.");
+    return {markt:markt,datum:datum,belegNr:null,summeBon:summeBon,summe:sum,positionen:pos,warnungen:warn,stimmt:summeBon!==null&&Math.abs(summeBon-sum)<=0.004};
+  }
+
   function parseBon(text,regeln){
+    var kiRes=parseKi(text,regeln);if(kiRes)return kiRes;
     var lines=String(text).replace(/\r/g,"").replace(/[−–—]/g,"-").split("\n").map(function(s){return s.replace(/\s+/g," ").trim()});
     var endIdx=-1,summeBon=null;
     for(var i=0;i<lines.length;i++){
@@ -652,6 +686,12 @@ var SBParser=(function(){
     else p=f.text();
     p.then(function(t){startReview(t)}).catch(function(e){setScan("Das hat nicht geklappt: "+(e&&e.message?e.message:e),"err")});
   }
+  var KI_VORLAGE="Du bekommst das Foto oder PDF eines Kassenbons. Lies alle Artikelzeilen und gib sie als reinen Text aus: pro Artikel eine Zeile, 5 Felder getrennt durch Semikolon, ohne Überschrift, ohne Tabelle, ohne Erklärung.\nAufbau: Bon-Nr.;Datum;Geschäft;Artikel;Betrag\nBeispiel: 1;10.10.2026;Lidl;Paprika rot;3,43\n\nRegeln:\n- Bon-Nr. ist immer 1.\n- Datum als TT.MM.JJJJ.\n- Geschäft: kurzer Name (z. B. Lidl).\n- Artikel genau so schreiben, wie er auf dem Bon steht (ein Semikolon im Artikel weglassen).\n- Betrag in Euro mit Dezimalkomma, ohne €-Zeichen. Bei Menge > 1 den Gesamtbetrag der Zeile.\n- Rabatte, Gutscheine und Pfand-Rückgaben als eigene Zeile mit negativem Betrag.\n- Nicht aufnehmen: Summe, Zahlungsart, MwSt, Karten- und Kundennummern, Namen, Adressen, Uhrzeit.\n- Wenn eine Zeile unleserlich ist: Artikel = [unleserlich] und den Betrag, wenn lesbar.\n\nGib die Zeilen in einem Codeblock aus. Schreibe danach in einer eigenen Zeile: Summe laut Bon: …";
+  $("bKi").onclick=function(){
+    var ok=function(){setScan("Vorlage kopiert. Füge sie in deiner KI-App ein und lade das Foto des Bons dazu hoch (Karten- und Kundennummern vorher abdecken). Kopiere dann die Antwort und füge sie unten unter „Bon-Text einfügen“ ein.","ok");$("textWrap").hidden=false;$("bText").setAttribute("aria-expanded","true")};
+    var fb=function(){var ta=document.createElement("textarea");ta.value=KI_VORLAGE;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");ok()}catch(e){setScan("Kopieren nicht möglich.","err")}document.body.removeChild(ta)};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(KI_VORLAGE).then(ok,fb)}else fb();
+  };
   $("bFoto").onclick=function(){$("fFoto").value="";$("fFoto").click()};
   $("bDatei").onclick=function(){$("fDatei").value="";$("fDatei").click()};
   $("fFoto").onchange=function(){handleFile(this.files[0])};
