@@ -249,6 +249,13 @@ var SBParser=(function(){
   var RE_ITEM=/^(.+?)\s+(-?\d{1,4},\d{2})\s*[AB]?\s*\*?$/;
   var RE_END=/^\s*(zu zahlen|summe\b|gesamtbetrag|total\b)/i;
 
+  function kiDate(x){
+    x=String(x||"").trim();var m;
+    if((m=x.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)))return m[3]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
+    if((m=x.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2})$/)))return "20"+m[3]+"-"+String(m[2]).padStart(2,"0")+"-"+String(m[1]).padStart(2,"0");
+    if((m=x.match(/^(\d{4})-(\d{2})-(\d{2})$/)))return x;
+    return null;
+  }
   // Antwort einer KI im Format "Bon-Nr.;Datum;Geschäft;Artikel;Betrag" plus Zeile "Summe laut Bon: ..."
   function parseKi(text,regeln){
     var lines=String(text).replace(/\r/g,"").split("\n").map(function(x){return x.trim()}).filter(function(x){return x&&x.indexOf("```")!==0});
@@ -257,7 +264,7 @@ var SBParser=(function(){
       var m=l.match(/^Summe laut (?:Bon|Rechnung|Kassenbon)\s*:?\s*(-?\d{1,5}[.,]\d{2})/i);
       if(m){summeBon=toNum(m[1]);return}
       var c=l.split(";");
-      if(c.length>=5&&/^\d{2}\.\d{2}\.\d{4}$/.test(c[1].trim())){
+      if(c.length>=5){
         var b=c[c.length-1].trim().replace(/\s|€|EUR/g,"");
         if(/^-?\d+([.,]\d{1,2})?$/.test(b))rows.push({datum:c[1].trim(),markt:c[2].trim(),name:c.slice(3,c.length-1).join(" ").trim(),betrag:toNum(b)});
       }
@@ -269,7 +276,8 @@ var SBParser=(function(){
       if(r.betrag<0&&/rabatt|gutschein|coupon|preisvorteil|nachlass/i.test(r.name)&&last){last.rabatt=r2(last.rabatt+r.betrag);return}
       pos.push({name:r.name,menge:1,einheit:"Stk",einzel:r.betrag,brutto:r.betrag,rabatt:0});
     });
-    var markt=rows[0].markt||null,dm=rows[0].datum.split("."),datum=dm[2]+"-"+dm[1]+"-"+dm[0];
+    var markt=null,datum=null;
+    rows.forEach(function(r){if(!markt&&r.markt)markt=r.markt;if(!datum)datum=kiDate(r.datum)});
     pos.forEach(function(q){
       q.netto=r2(q.brutto+q.rabatt);
       var c=classify(q.name,markt,regeln);q.gruppe=c.gruppe;q.sicher=c.sicher;q.gelernt=!!c.gelernt;
