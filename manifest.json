@@ -1,13 +1,15 @@
 {
-  "name": "Schnellbon",
-  "short_name": "Schnellbon",
+  "name": "Monatsflash",
+  "short_name": "Monatsflash",
+  "description": "Zeigt, was du diesen Monat wofür ausgegeben hast.",
+  "lang": "de",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#EEF2F0",
   "theme_color": "#0B6E5F",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
   ]
 }
